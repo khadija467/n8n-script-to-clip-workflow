@@ -1,0 +1,692 @@
+{
+  "name": "Script Lines to YouTube Clips - Gemini",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8ac92eaf-f827-4282-96ff-4b550fdd32c7",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -3264,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1-rwtQUkJ4TtSXxXR37nVbZgNH3L6AlGrBoiQ_gaP0fA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet2",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "50b07bcc-9f48-422d-8c77-3edd9df3f45d",
+      "name": "Read Script Lines",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -3040,
+        528
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "8fHJIDRuL7INzrpk",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "1115fd9e-2a3d-4f05-b8f1-4c6bd4ee5853",
+      "name": "Loop Over Lines",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2816,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $json;\nconst lineNumber = row.Line ?? row.lineNumber ?? '';\nconst originalLine = row['Script Line'] ?? row.Script ?? row.originalLine ?? '';\nif (!String(originalLine).trim()) return [];\nreturn [{json:{lineNumber:Number(lineNumber)||0,originalLine:String(originalLine).trim(),fullScriptContext:String(originalLine).trim()}}];"
+      },
+      "id": "ca122c66-2e37-4b2d-823e-2b6215a58342",
+      "name": "Prepare Current Line",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2592,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "YOUR-API-KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  {\n    contents: [\n      {\n        parts: [\n          {\n            text:\n`You are an expert video research assistant.\n\nYou will receive ONE sentence from a video script.\n\nSCRIPT LINE:\n${$json.originalLine}\n\nYour job is to understand exactly what this sentence means and determine what real-world YouTube footage would best illustrate it.\n\nReturn ONLY valid JSON in this exact format:\n\n{\n  \"meaning\": \"Brief explanation of what the sentence means.\",\n  \"visualNeeded\": \"Describe the exact footage needed to represent this sentence.\",\n  \"searchQuery\": \"A highly specific YouTube search query for finding the best matching footage.\",\n  \"confidence\": 0\n}\n\nRules:\n1. Understand the actual meaning before creating the search query.\n2. Never use a generic search query when a specific query is possible.\n3. If a person, athlete, celebrity, team, company, event, location, vehicle, race, incident, or organization is mentioned, include its exact name.\n4. Prefer real footage, news footage, interviews, press conferences, races, matches, events, and documentary footage.\n5. Do not use generic stock footage unless the sentence is genuinely generic.\n6. Do not invent facts.\n7. confidence must be an integer from 0 to 10.\n8. Return JSON only. No markdown. No explanation outside the JSON.`\n          }\n        ]\n      }\n    ],\n    generationConfig: {\n      temperature: 0.2,\n      responseMimeType: \"application/json\"\n    }\n  }\n}}",
+        "options": {}
+      },
+      "id": "9da66e3f-98c2-4ef0-9f33-bf34d53c1246",
+      "name": "Gemini - Analyze Line",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2352,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const p=$('Prepare Current Line').item.json; const t=$json.candidates?.[0]?.content?.parts?.[0]?.text||''; let a; try{a=JSON.parse(t.replace(/```json|```/g,'').trim())}catch(e){a={meaning:'',visualNeeded:'',searchQuery:p.originalLine,confidence:0}} return [{json:{...p,meaning:a.meaning||'',visualNeeded:a.visualNeeded||'',searchQuery:a.searchQuery||p.originalLine,confidence:Number(a.confidence)||0}}];"
+      },
+      "id": "cb26c53b-eb88-4d2d-af37-f41ac5a41dc1",
+      "name": "Parse Gemini Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2144,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.refinedSearchQuery }}"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "maxResults",
+              "value": "10"
+            },
+            {
+              "name": "order",
+              "value": "relevance"
+            },
+            {
+              "name": "key",
+              "value": "AIzaSyCTB4fQSJFeTPRhnQ2keRn7IlB04pX8WIw"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1752dcbf-b0cf-4c4f-8fbd-19beac4fd3dc",
+      "name": "Search YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1920,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const p=$('Parse Gemini Result').item.json; const r=$json.items||[]; if(!r.length)return [{json:{...p,videoTitle:'',youtubeUrl:'',timestamp:'',finalClipUrl:'',source:'No suitable YouTube result',noResults:true}}]; const v=r[0],id=v.id?.videoId||''; return [{json:{...p,videoTitle:v.snippet?.title||'',youtubeUrl:id?`https://www.youtube.com/watch?v=${id}`:'',timestamp:'',finalClipUrl:id?`https://www.youtube.com/watch?v=${id}`:'',source:id?'YouTube search':'No suitable YouTube result',noResults:!id}}];"
+      },
+      "id": "7551c5ef-b4c7-42ce-95d2-c988b10e8bf8",
+      "name": "Select Best Video",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1696,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.noResults }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "acabd655-637b-4ac4-b72f-8e7c06469485",
+      "name": "Any Video Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1472,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1-rwtQUkJ4TtSXxXR37nVbZgNH3L6AlGrBoiQ_gaP0fA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet2",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Line": "={{ $json.lineNumber }}",
+            "Script": "={{ $json.originalLine }}",
+            "Meaning": "={{ $json.meaning }}",
+            "Visual Needed": "={{ $json.visualNeeded }}",
+            "Video Title": "={{ $json.videoTitle }}",
+            "YouTube URL": "={{ $json.youtubeUrl }}",
+            "Timestamp": "={{ $json.timestamp }}",
+            "Final Clip URL": "={{ $json.finalClipUrl }}",
+            "Source": "={{ $json.source }}",
+            "Confidence": "={{ $json.confidence }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Line",
+              "displayName": "Line",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Script",
+              "displayName": "Script",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Meaning",
+              "displayName": "Meaning",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Visual Needed",
+              "displayName": "Visual Needed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Video Title",
+              "displayName": "Video Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "YouTube URL",
+              "displayName": "YouTube URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Final Clip URL",
+              "displayName": "Final Clip URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Confidence",
+              "displayName": "Confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "a560eb7c-6b9e-47ea-8e0a-365fca1bffa6",
+      "name": "Write Result To Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1264,
+        432
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "8fHJIDRuL7INzrpk",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1-rwtQUkJ4TtSXxXR37nVbZgNH3L6AlGrBoiQ_gaP0fA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet2",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Line",
+              "displayName": "Line",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Script",
+              "displayName": "Script",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Meaning",
+              "displayName": "Meaning",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Visual Needed",
+              "displayName": "Visual Needed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Video Title",
+              "displayName": "Video Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "YouTube URL",
+              "displayName": "YouTube URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Final Clip URL",
+              "displayName": "Final Clip URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Confidence",
+              "displayName": "Confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "426122b3-d11e-458c-95ec-c6b4782e956e",
+      "name": "Write No Result",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1264,
+        640
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "8fHJIDRuL7INzrpk",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "YOUR-GEMINI-API-KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  {\n    contents: [\n      {\n        parts: [\n          {\n            text: `You are a video research assistant.\n\nAnalyze this script line and the available context.\n\nSCRIPT LINE:\n${$json.originalLine}\n\nCURRENT MEANING:\n${$json.meaning}\n\nCURRENT VISUAL NEEDED:\n${$json.visualNeeded}\n\nCURRENT SEARCH QUERY:\n${$json.searchQuery}\n\nYour task is to identify the MAIN PERSON, TEAM, COMPANY, EVENT, LOCATION, PRODUCT, or OTHER SPECIFIC ENTITY that the footage should focus on.\n\nRules:\n\n1. If a person's name is explicitly mentioned, use that exact person.\n2. If the line uses pronouns such as he, she, his, her, they, etc., use the context to determine who the pronoun refers to.\n3. If the main person/entity is established by the context, use that exact name.\n4. If the sentence describes a reaction, the search must focus on that same person/entity.\n5. Never replace a specific person with a generic word such as driver, athlete, celebrity, or team.\n6. The YouTube search query MUST contain the main person's/entity's name whenever a specific subject exists.\n7. Make the query suitable for finding real YouTube footage.\n8. Prefer interviews, reactions, press conferences, races, events, news footage and other real footage.\n9. Do not invent a person or entity.\n10. If there is genuinely no specific subject, return an empty mainSubject.\n\nReturn ONLY valid JSON in this exact format:\n\n{\n  \"mainSubject\": \"\",\n  \"subjectType\": \"\",\n  \"refinedSearchQuery\": \"\",\n  \"reason\": \"\"\n}\n\nExample:\n\n{\n  \"mainSubject\": \"Fernando Alonso\",\n  \"subjectType\": \"person\",\n  \"refinedSearchQuery\": \"Fernando Alonso reaction interview Aston Martin contract\",\n  \"reason\": \"The sentence is about Fernando Alonso and the footage should focus on him.\"\n}`\n          }\n        ]\n      }\n    ],\n    generationConfig: {\n      temperature: 0.1,\n      responseMimeType: \"application/json\"\n    }\n  }\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -2192,
+        256
+      ],
+      "id": "0ea3abaf-ab3f-4139-ad56-56e205cdfad3",
+      "name": "Identify Main Subject"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json;\n\nlet text =\n  response.candidates?.[0]?.content?.parts?.[0]?.text || '';\n\ntext = text.replace(/```json|```/g, '').trim();\n\nlet result;\n\ntry {\n  result = JSON.parse(text);\n} catch (error) {\n  result = {\n    mainSubject: '',\n    subjectType: '',\n    refinedSearchQuery: ''\n  };\n}\n\nreturn [{\n  json: {\n    ...$json,\n    mainSubject: result.mainSubject || '',\n    subjectType: result.subjectType || '',\n    refinedSearchQuery: result.refinedSearchQuery || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1936,
+        256
+      ],
+      "id": "8bcb9231-3f54-4cfb-aede-57b2e3ed618c",
+      "name": "Parse Subject Result"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Read Script Lines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Script Lines": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Lines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Lines": {
+      "main": [
+        [
+          {
+            "node": "Prepare Current Line",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Current Line",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Current Line": {
+      "main": [
+        [
+          {
+            "node": "Gemini - Analyze Line",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini - Analyze Line": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini Result": {
+      "main": [
+        [
+          {
+            "node": "Identify Main Subject",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search YouTube": {
+      "main": [
+        [
+          {
+            "node": "Select Best Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Best Video": {
+      "main": [
+        [
+          {
+            "node": "Any Video Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Video Found?": {
+      "main": [
+        [
+          {
+            "node": "Write No Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write Result To Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Result To Google Sheet": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Lines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write No Result": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Lines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Identify Main Subject": {
+      "main": [
+        [
+          {
+            "node": "Parse Subject Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Subject Result": {
+      "main": [
+        [
+          {
+            "node": "Search YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "dec4f385-1fbe-4716-be89-92ac7fe1605b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d27878018d6729a9176aeeb0cca474bb29edbe9310ba443adbcc1881e6f28337"
+  },
+  "nodeGroups": [],
+  "id": "51qehg3Vau93Usdo",
+  "tags": []
+}
